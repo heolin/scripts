@@ -3,8 +3,9 @@
 
 from whoosh.index import create_in, open_dir
 from whoosh.fields import Schema, ID, STORED, KEYWORD, TEXT, NUMERIC, BOOLEAN, DATETIME, NGRAM
-from whoosh.qparser import QueryParser
-from vector import get_standard_vectors_union, get_standard_vector, get_full_vector
+from whoosh.qparser import QueryParser, FuzzyTermPlugin, OrGroup
+import vector
+#from vector import get_standard_vectors_union, get_standard_vector, get_full_vector
 
 import os
 import argparse
@@ -114,7 +115,8 @@ class SearchManager(object):
 
     def search(self, query):
         #self.message(u"Searching for: \"{}\".".format(query))
-        parser = QueryParser(self.default_field, self.schema)
+        parser = QueryParser(self.default_field, self.schema, group=OrGroup)
+        parser.add_plugin(FuzzyTermPlugin())
         parsed_query = parser.parse(query)
         return self.searcher.search(parsed_query)
 
@@ -131,8 +133,13 @@ class SearchManager(object):
     def get_vector(self, terms, field=None):
         if field == None:
             field = self.default_field
-        vector = self.get_std_vector(terms, field)
-        return get_full_vector(vector, self.get_count())
+
+        terms = terms.split(' ')
+        vectors = [self.get_term_vector(term, field) for term in terms]
+        vector_union = vector.get_vector_union(vectors)
+        merged_vector = vector.get_vector_merge(vector_union)
+        full_vector = vector.get_full_vector(merged_vector, self.get_count())
+        return full_vector
 
     def get_count(self):
         return self.searcher.doc_count_all()
@@ -147,6 +154,15 @@ class SearchManager(object):
                 data.append(field+":"+r[field])
         print "\t".join(data)
 
+    def print_document(self, index):
+        print self.searcher.document()
+
+
+        data = []
+        for field in self.fields:
+            data.append(field+":"+result[field])
+        print "\t".join(data)
+
 
 if __name__ == "__main__":
     input_parser = argparse.ArgumentParser()
@@ -157,6 +173,7 @@ if __name__ == "__main__":
     input_parser.add_argument('-s', '--search',  help="Search results for given query.")
     input_parser.add_argument('-q', '--quiet', action="store_true", help="Show logs to stderr.")
     input_parser.add_argument('-v', '--vector', help="Show vector for given terms.")
+    input_parser.add_argument('-d', '--document', help="Print document of given index.")
 
     args = input_parser.parse_args()
     input_verbose = True
@@ -171,3 +188,5 @@ if __name__ == "__main__":
         manager.print_search(args.search)
     if args.vector:
         print manager.get_vector(args.vector)
+    if args.document:
+        print manager.print_document(args.document)
